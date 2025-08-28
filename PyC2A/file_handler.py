@@ -141,26 +141,3 @@ class CampbellFile:
         df = self.parse_frame_data(f)
         footer = self.parse_frame_footer(f)
         return t_start, recnum, df, footer
-
-    # def parse_frame_data(self, f) -> DataFrame:
-    #     # only one dtype, can process all at once
-    #     if self.n_dtypes == 1:
-    #         try:
-    #             data_bytes = f.read(self.frame_data_size)
-    #             if data_bytes == b'': 
-    #                 raise EOFError
-    #             dtype = self.registered_dtypes[0]
-    #             data = np.frombuffer(data_bytes, dtype=dtype).reshape(-1, len(self.file_fieldnames))
-    #             return DataFrame(data=data, columns=self.file_fieldnames)
-    #         except Exception:
-    #             pass
-        
-    #     # multiple datatypes
-    #     columns = {k:np.empty(self.frame_nrows, dtype=d) for k, d in zip(self.file_fieldnames, self.registered_dtypes)}
-    #     for r in range(self.frame_nrows):
-    #         for col, d, s, in zip(columns, self.registered_dtypes, self.strides):
-    #             data_bytes = f.read(s)
-    #             if data_bytes == b"":
-    #                 raise EOFError
-    #             columns[col][r] = parse_value(data_bytes, dtype=d)
-    #     return DataFrame(columns)
