@@ -115,5 +115,7 @@ def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
                 dfs[framenum] = df  # could speed this up a lot
 
         except (EOFError, IndexError):
-            return csfile, concat(dfs).sort_values("TIMESTAMP").reset_index(drop=True)
-        return csfile, concat(dfs).sort_values("TIMESTAMP").reset_index(drop=True)
+            msg = f"EOFError! File {fn} may be corrupted. Outputting results anyway..."
+            warnings.warn(msg)
+            return csfile, concat(dfs[:framenum]).sort_values("TIMESTAMP").reset_index(drop=True)
+        return csfile, concat(dfs[:framenum]).sort_values("TIMESTAMP").reset_index(drop=True)

@@ -1,5 +1,5 @@
 # PyC2A
-PyC2A is a python module for parsing Campbell Scientific TOB binary files to ASCII. Currently, only TOB3 and TOB2 are implemented. Also, it's not very fast, but I'm working on that part. [Mathias Bavay's camp2ascii](https://gitlabext.wsl.ch/bavay/camp2ascii/-/tree/master?ref_type=heads) program is much faster if you need something more performant. 
+PyC2A is a simple python module for parsing Campbell Scientific TOB binary files to ASCII or other formats. Unlike CardConvert, this program is easier to automate and include in workflows, but is not as flexible, is slower, and doesn't deal well with corrupted files. Currently, only TOB3 and TOB2 are implemented. Also, it's not very fast, but I'm working on that part. [Mathias Bavay's camp2ascii](https://gitlabext.wsl.ch/bavay/camp2ascii/-/tree/master?ref_type=heads) program is much faster if you need something more performant. 
 
 # Usage
 This module is not distributed as a package yet. To use it, place the PyC2A directory in your working directory. To run from the command line, place `main.py` in the parent directory of PyC2A:
