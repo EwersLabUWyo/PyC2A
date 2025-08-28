@@ -5,6 +5,7 @@ from pandas import Timestamp, Timedelta
 from typing import Literal
 from io import BufferedReader
 from pandas import DataFrame
+from functools import partial
 
 from .file_handler import CampbellFile
 
@@ -84,6 +85,34 @@ dtype_registry = {}
 dtype_registry.update(np_readable_type_registry).update(proprietary_type_registry)
 
 #### vector/nonvector data parsing functions ####
+#### handle data parsing ####
+def data_parser_factory(csfile:CampbellFile) -> Callable:
+    """creates a custom function to read a dataline, vectorizing as much of the computation as possible"""
+
+    is_np_readable = tuple(d in np_readable_type_registry for d in csfile.file_dtypes)
+    if sum(is_np_readable) == len(is_np_readable):
+        return partial(vector_parser, csfile=csfile)
+    
+    parser_lst = []
+    return_dtypes = []
+    for i, name in enumerate(csfile.file_dtypes):
+        if is_np_readable[i]:
+            parser = partial(np.frombuffer, dtype=np_readable_type_registry[name])
+            return_dtype = np_readable_type_registry[name]
+        else:
+            parser = proprietary_type_registry[name].from_bytes
+            return_dtype = proprietary_type_registry[name].return_type
+        parser_lst.append(parser)
+        return_dtypes.append(return_dtype)
+
+    def nonvector_parser(f: BufferedReader) -> np.ndarray:
+        df = DataFrame({name:np.empty(csfile.frame_nrows, dtype=d) for name, d in zip(csfile.file_fieldnames, return_dtypes)})
+        for r in df.index:
+            for name, s, parser in zip(csfile.file_fieldnames, csfile.strides, parser_lst):
+                df.loc[r, name] = parser(f.read(s))
+        return df
+    return nonvector_parser
+
 def vector_parser(csfile: CampbellFile, f: BufferedReader) -> DataFrame:
     # e.g. [("IEEE4B", np.dtype(">f4")), ("Bool8", np.dtype(">ui1")), ("ULONG", np.dtype(">ui4"))]
     dtype = np.dtype([(k, np_readable_type_registry[k]) for k in csfile.file_dtypes])
@@ -91,23 +120,23 @@ def vector_parser(csfile: CampbellFile, f: BufferedReader) -> DataFrame:
         data_bytes = f.read(csfile.frame_data_size)
         if data_bytes == b'': 
             raise EOFError
-        data = np.frombuffer(data_bytes, dtype=dtype).reshape(-1, len(csfile.file_fieldnames))
+        data = np.frombuffer(data_bytes, dtype=dtype).reshape(-1).tolist()
         return DataFrame(data=data, columns=csfile.file_fieldnames)
     except Exception:  # TODO: figure out what error numpy throws
         pass
 
-def nonvector_parser(csfile: CampbellFile, f: BufferedReader) -> DataFrame:
-    columns = {k:np.empty(csfile.frame_nrows, dtype=d) for k, d in zip(csfile.file_fieldnames, csfile.registered_dtypes)}
-    for r in range(csfile.frame_nrows):
-        for col, d, s, in zip(columns, csfile.registered_dtypes, csfile.strides):
-            data_bytes = f.read(s)
-            if data_bytes == b"":
-                raise EOFError
-            #### TODO: everything should work now, EXCEPT THIS PART
-            columns[col][r] = parse_value(data_bytes, dtype=d)
-    return DataFrame(columns)
+# def nonvector_parser(csfile: CampbellFile, f: BufferedReader) -> DataFrame:
+#     columns = {k:np.empty(csfile.frame_nrows, dtype=d) for k, d in zip(csfile.file_fieldnames, csfile.registered_dtypes)}
+#     for r in range(csfile.frame_nrows):
+#         for col, d, s, in zip(columns, csfile.registered_dtypes, csfile.strides):
+#             data_bytes = f.read(s)
+#             if data_bytes == b"":
+#                 raise EOFError
+#             #### TODO: everything should work now, EXCEPT THIS PART
+#             columns[col][r] = parse_value(data_bytes, dtype=d)
+#     return DataFrame(columns)
 
-data_parser_registry = (nonvector_parser, vector_parser)
+# data_parser_registry = (nonvector_parser, vector_parser)
 
 # # ascii handled differently
 # def parse_IEEE4(b:bytes) -> np.float32:

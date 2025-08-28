@@ -64,53 +64,6 @@ format_registry: dict[str, Any] = {
     "TOA5": TOA5,
 }
 
-#### handle data parsing ####
-def data_parser_factory(csfile:CampbellFile) -> Callable:
-    """creates a custom function to read a dataline, vectorizing as much of the computation as possible"""
-    is_np_readable = tuple(d in np_readable_type_registry for d in csfile.file_dtypes)
-    if sum(is_np_readable) == len(is_np_readable):
-        return vector_parser
-    
-    # keep track of 
-    # * the functions used to parse values (parser_lst)
-    # * the number of bytes red by each function (strides)
-    # also create 
-    # * a numpy datatype constructor that is used to create the np.frombuffer function
-    # * a numpy datatype constructor that is used to initialize an empty dataframe
-    parser_lst = []
-    strides = []
-    np_dtype_constructor = []
-    line_dtype = []
-    for i, name in enumerate(csfile.file_dtypes):
-        if is_np_readable[i]:
-            np_dtype_constructor.append((name, np_readable_type_registry[name]))
-            line_dtype.append((name, np_readable_type_registry[name]))
-        else:
-            if len(np_dtype_constructor):
-                parser = partial(np.frombuffer, dtype=np.dtype(np_dtype_constructor))
-                parser_lst.append(parser)
-                strides.append(parser.itemsize)
-                np_dtype_constructor.clear()
-            parser = proprietary_type_registry[name]
-            parser_lst.append(parser.from_bytes)
-            strides.append(parser.size)
-            line_dtype.append(np.dtype((name, parser.return_type)))
-
-    #### TODO might not work because of how buffers are processed by numpy
-    def nonvector_parser(f: BufferedReader) -> np.ndarray:
-        data = np.empty((csfile.frame_nrows, len(csfile.file_fieldnames)), dtype=line_dtype)
-        for r in range(csfile.frame_nrows):
-            i = 0
-            for s, parser in zip(strides, parser_lst):
-                data = parser(f.read(s))
-                data[r, i:i+s] = data
-                i += s
-        return DataFrame(data=data, columns=csfile.file_fieldnames)
-    return nonvector_parser
-
-            
-    dtype = np.dtype([(k, np_readable_type_registry[k]) for k in csfile.file_dtypes])
-
 #### main file class ####
 @dataclass
 class CampbellFile:
@@ -141,8 +94,7 @@ class CampbellFile:
         self.frame_nrows = self.frame_data_size // sum(self.strides)
 
         # frame of the file is readable by np.frombuffer if all datatypes are "native" numpy types (much faster)
-        n_dtypes = len(set(self.file_dtypes))
-        self.is_vector_readable = sum(d in np_readable_type_registry for d in self.file_dtypes) == n_dtypes
+        self._data_parser = data_parser_factory(self)
 
     @property
     def handler(self):
@@ -150,7 +102,7 @@ class CampbellFile:
     
     @property
     def data_parser(self):
-        return partial(data_parser_registry[self.is_vector_readable], csfile=self) 
+        return self._data_parser
 
     def parse_frame_header(self, f) -> tuple[Timestamp, int]:
         size = self.handler.header_size
