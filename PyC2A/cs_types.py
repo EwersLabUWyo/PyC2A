@@ -12,6 +12,7 @@ from .file_handler import CampbellFile
 class NSEC:
     name = "NSEC"
     size = 8
+    return_type = Timestamp
     @staticmethod
     def from_bytes(self, b: bytes) -> Timestamp:
         S = int.from_bytes(b[:4], "little", signed=False)
@@ -21,6 +22,7 @@ class NSEC:
 class FP2:
     name = "FP2"
     size = 2
+    return_type = np.dtype(">f2")
     @staticmethod
     def from_bytes(b: bytes) -> np.float16:
         # Bit 16: Sign, 0 = positive, 1 = negative
