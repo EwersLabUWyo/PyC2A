@@ -7,22 +7,22 @@ from io import BufferedReader
 from pandas import DataFrame
 from functools import partial
 
-from .file_handler import CampbellFile
+# from .file_handler import CampbellFile"
 
 
 class NSEC:
     name = "NSEC"
-    size = 8
+    itemsize = 8
     return_type = Timestamp
     @staticmethod
-    def from_bytes(self, b: bytes) -> Timestamp:
+    def from_bytes(b: bytes) -> Timestamp:
         S = int.from_bytes(b[:4], "little", signed=False)
         NS = int.from_bytes(b[4:8], "little", signed=False)
         total = np.int64(S)*np.int64(1_000_000_000) + np.int64(NS)//1e6*1e6
         return Timestamp("1990-01-01") + Timedelta(total, unit="ns")
 class FP2:
     name = "FP2"
-    size = 2
+    itemsize = 2
     return_type = np.dtype(">f2")
     @staticmethod
     def from_bytes(b: bytes) -> np.float16:
@@ -32,22 +32,22 @@ class FP2:
         # +INF: sign = 0, mantissa = 8191
         # -INF: sign = 1, mantissa = 8191
         # NAN: sign = 1, mantissa = 8190
-        tmp = int.from_bytes(b, byteorder="little", signed=False)
+        tmp = int.from_bytes(b, byteorder="big", signed=False)
         S = tmp >> 15
         E = (tmp & 0x6000) >> 13
         M = (tmp & 0x1fff)
 
         match S, E, M:
             case 0, 0, 8191:
-                return np.dtype(">f2")(np.inf)
+                return np.float16(np.inf)
             case 1, 0, 8191:
-                return np.dtype(">f2")(-np.inf)
+                return np.float16(-np.inf)
             case 1, 0, 8190:
-                return np.dtype(">f2")(np.nan)
+                return np.float16(np.nan)
             case _:
-                return np.dtype(">f2")((1 - 2*S)*M*10**(-E))
+                return np.float16((1 - 2*S)*M*10**(-E))
 
-def handle_string_type(cf:CampbellFile):
+def handle_string_type(cf):
     ascii_dtypes = {}
     for name in cf.file_dtypes:
         if "ASCII" in name:
@@ -64,15 +64,15 @@ np_readable_type_registry = {
     "IEEE8": np.dtype(">f8"),
     "IEEE8B": np.dtype(">f8"),
     "Long": np.dtype(">i4"),
-    "UINT1": np.dtype(">ui1"),
-    "UINT1B": np.dtype(">ui1"),
-    "UINT2": np.dtype(">ui2"),
-    "UINT2B": np.dtype(">ui2"),
-    "UINT4": np.dtype(">ui4"),
-    "UINT4B": np.dtype(">ui4"),
-    "Bool8": np.dtype(">ui1"),
-    "Bool8B": np.dtype(">ui1"),
-    "ULONG": np.dtype(">ui4"),
+    "UINT1": np.dtype(">u1"),
+    "UINT1B": np.dtype(">u1"),
+    "UINT2": np.dtype(">u2"),
+    "UINT2B": np.dtype(">u2"),
+    "UINT4": np.dtype(">u4"),
+    "UINT4B": np.dtype(">u4"),
+    "Bool8": np.dtype(">u1"),
+    "Bool8B": np.dtype(">u1"),
+    "ULONG": np.dtype(">u4"),
     "LONG": np.dtype(">i4"),
     "Boolean": np.dtype("|b1"),
 }
@@ -81,17 +81,18 @@ proprietary_type_registry = {
     "SecNano": NSEC,
     "FP2": FP2,
 }
-dtype_registry = {}
-dtype_registry.update(np_readable_type_registry).update(proprietary_type_registry)
+dtype_registry = dict()
+dtype_registry.update(np_readable_type_registry)
+dtype_registry.update(proprietary_type_registry)
 
 #### vector/nonvector data parsing functions ####
 #### handle data parsing ####
-def data_parser_factory(csfile:CampbellFile) -> Callable:
+def data_parser_factory(csfile) -> Callable:
     """creates a custom function to read a dataline, vectorizing as much of the computation as possible"""
 
     is_np_readable = tuple(d in np_readable_type_registry for d in csfile.file_dtypes)
     if sum(is_np_readable) == len(is_np_readable):
-        return partial(vector_parser, csfile=csfile)
+        return lambda f: vector_parser(csfile, f)#partial(vector_parser, csfile=csfile)
     
     parser_lst = []
     return_dtypes = []
@@ -113,9 +114,9 @@ def data_parser_factory(csfile:CampbellFile) -> Callable:
         return df
     return nonvector_parser
 
-def vector_parser(csfile: CampbellFile, f: BufferedReader) -> DataFrame:
+def vector_parser(csfile, f: BufferedReader) -> DataFrame:
     # e.g. [("IEEE4B", np.dtype(">f4")), ("Bool8", np.dtype(">ui1")), ("ULONG", np.dtype(">ui4"))]
-    dtype = np.dtype([(k, np_readable_type_registry[k]) for k in csfile.file_dtypes])
+    dtype = np.dtype([(f"{k}_{i}", np_readable_type_registry[k]) for i, k in enumerate(csfile.file_dtypes)])
     try:
         data_bytes = f.read(csfile._frame_data_size)
         if data_bytes == b'': 

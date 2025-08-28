@@ -41,7 +41,7 @@ class TOB3:
     def parse_header(b: bytes) -> tuple[Timestamp, int]:
         nsec_bytes = b[:8]
         recnum_bytes = b[8:]
-        return dtype_registry["NSEC"].from_bytes(nsec_bytes), dtype_registry["UINT4"](recnum_bytes)
+        return dtype_registry["NSEC"].from_bytes(nsec_bytes), np.frombuffer(recnum_bytes, dtype_registry["UINT4"])
     @staticmethod
     def parse_footer(b: bytes) -> None:
         return None
@@ -67,7 +67,7 @@ format_registry: dict[str, Any] = {
 #### main file class ####
 @dataclass
 class CampbellFile:
-    fmt: Literal["TOB1", "TOB2", "TOB3", "TOA5"]
+    fmt: Literal["TOB1", "TOB2", "TOB3", "TOA5"] = None
     station: str = None
     model: str = None
     serial_number: str = None
@@ -86,13 +86,14 @@ class CampbellFile:
     file_process: tuple[str] = None
     file_dtypes: tuple[str] = None
 
-    def __post_init__(self):
+    def manual_post_init(self):
         # instantiate information not found in the raw file metadata
         self._handler = format_registry[self.fmt]
         self._registered_dtypes = tuple(dtype_registry[name] for name in self.file_dtypes)
+        strides = []
         self._strides = tuple(rdt.itemsize for rdt in self._registered_dtypes)
 
-        self._frame_data_size = self.frame_size - self.handler.frame_header_size - self.handler.frame_footer_size
+        self._frame_data_size = self.frame_size - self.handler.header_size - self.handler.footer_size
         self._frame_nrows = self._frame_data_size // sum(self._strides)
         self._nframes = self.intended_table_size // self._frame_nrows
 
