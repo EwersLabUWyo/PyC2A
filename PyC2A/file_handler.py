@@ -1,3 +1,17 @@
+# -----------------------------------------------------------------------------
+#  ftype_specifics.py
+#
+#  module to handle differences between TOB1/2/3 and to handle the main processing methods
+#
+#  Author: Alexander S Fox
+#  Contact: https://www.afox.land   (replace with your preferred contact)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+# -----------------------------------------------------------------------------
+
 from dataclasses import dataclass
 from typing import Literal, Callable, Any
 from inspect import signature
@@ -67,6 +81,7 @@ format_registry: dict[str, Any] = {
 #### main file class ####
 @dataclass
 class CampbellFile:
+    """Dataclass containing raw file metadata, plus some generic methods to handle binary data processing and to handle multiple TOB file types."""
     fmt: Literal["TOB1", "TOB2", "TOB3", "TOA5"] = None
     station: str = None
     model: str = None

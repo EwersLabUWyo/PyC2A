@@ -23,7 +23,8 @@ from tqdm import tqdm
 from .file_handler import *
 from .cs_types import *
 
-def camp2ascii(fn:Path, nlines=None) -> DataFrame:
+def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
+    """Converts a campbell scientific TOB file to a dataframe. Returns a tuple of the CampbellFile dataclass (containing raw file metadata) and a pandas DataFrame of the raw data."""
 
     csfile = CampbellFile()
 
