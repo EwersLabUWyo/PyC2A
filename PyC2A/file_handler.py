@@ -87,22 +87,21 @@ class CampbellFile:
     file_dtypes: tuple[str] = None
 
     def __post_init__(self):
-        self.registered_dtypes = tuple(dtype_registry[name] for name in self.file_dtypes)
-        self.strides = tuple(rdt.itemsize for rdt in self.registered_dtypes)
+        # instantiate information not found in the raw file metadata
+        self._handler = format_registry[self.fmt]
+        self._registered_dtypes = tuple(dtype_registry[name] for name in self.file_dtypes)
+        self._strides = tuple(rdt.itemsize for rdt in self._registered_dtypes)
 
-        self.frame_data_size = self.frame_size - self.handler.frame_header_size - self.handler.frame_footer_size
-        self.frame_nrows = self.frame_data_size // sum(self.strides)
+        self._frame_data_size = self.frame_size - self.handler.frame_header_size - self.handler.frame_footer_size
+        self._frame_nrows = self._frame_data_size // sum(self._strides)
+        self._nframes = self.intended_table_size // self._frame_nrows
 
-        # frame of the file is readable by np.frombuffer if all datatypes are "native" numpy types (much faster)
         self._data_parser = data_parser_factory(self)
+
 
     @property
     def handler(self):
-        return format_registry[self.fmt]
-    
-    @property
-    def data_parser(self):
-        return self._data_parser
+        return self._handler
 
     def parse_frame_header(self, f) -> tuple[Timestamp, int]:
         size = self.handler.header_size
@@ -110,7 +109,10 @@ class CampbellFile:
         if b == b"":
             raise EOFError
         return self.handler.parse_header(b)
-
+    
+    def parse_frame_data(self, f):
+        return self._data_parser(f)
+    
     def parse_frame_footer(self, f) -> Any:
         size = self.handler.footer_size
         b = f.read(size)
@@ -118,6 +120,11 @@ class CampbellFile:
             raise EOFError
         return self.handler.parse_footer(b)
     
+    def parse_whole_frame(self, f) -> tuple[Timestamp, int, DataFrame, Any]:
+        t_start, recnum = self.parse_frame_header(f)
+        df = self.parse_frame_data(f)
+        footer = self.parse_frame_footer(f)
+        return t_start, recnum, df, footer
 
     # def parse_frame_data(self, f) -> DataFrame:
     #     # only one dtype, can process all at once

@@ -106,9 +106,9 @@ def data_parser_factory(csfile:CampbellFile) -> Callable:
         return_dtypes.append(return_dtype)
 
     def nonvector_parser(f: BufferedReader) -> np.ndarray:
-        df = DataFrame({name:np.empty(csfile.frame_nrows, dtype=d) for name, d in zip(csfile.file_fieldnames, return_dtypes)})
+        df = DataFrame({name:np.empty(csfile._frame_nrows, dtype=d) for name, d in zip(csfile.file_fieldnames, return_dtypes)})
         for r in df.index:
-            for name, s, parser in zip(csfile.file_fieldnames, csfile.strides, parser_lst):
+            for name, s, parser in zip(csfile.file_fieldnames, csfile._strides, parser_lst):
                 df.loc[r, name] = parser(f.read(s))
         return df
     return nonvector_parser
@@ -117,7 +117,7 @@ def vector_parser(csfile: CampbellFile, f: BufferedReader) -> DataFrame:
     # e.g. [("IEEE4B", np.dtype(">f4")), ("Bool8", np.dtype(">ui1")), ("ULONG", np.dtype(">ui4"))]
     dtype = np.dtype([(k, np_readable_type_registry[k]) for k in csfile.file_dtypes])
     try:
-        data_bytes = f.read(csfile.frame_data_size)
+        data_bytes = f.read(csfile._frame_data_size)
         if data_bytes == b'': 
             raise EOFError
         data = np.frombuffer(data_bytes, dtype=dtype).reshape(-1).tolist()

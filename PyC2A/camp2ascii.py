@@ -70,58 +70,39 @@ def camp2ascii(fn:Path, chunksize:Timedelta=None) -> DataFrame:
         if fileinfo.fmt == "TOA5":
             return fileinfo, read_csv(fn, skiprows=[0, 2, 3], na_values=["-9999", "NAN"], parse_dates=["TIMESTAMP"])
 
-        frame_header_size = frame_header_size_map[fileinfo.fmt]
-        frame_footer_size = frame_footer_size_map[fileinfo.fmt]
-        frame_data_size = fileinfo.frame_size - frame_header_size - frame_footer_size
-
+        ### TODO: improve time interval parsing.
         camp2timedelta = {
             "MSEC": "ms"
         }
         dt, dt_unit = fileinfo.interval.split(" ")
         dt_unit = camp2timedelta[dt_unit]
         dt = Timedelta(dt + dt_unit)
-        if chunksize is not None:
-            records_per_chunk = chunksize // dt
 
-        dfs = []
-        # for computing clock drift: we keep an independant clock counter to avoid datalogger clock drift.
-        nrows_expected = frame_data_size // sum(dtype_size_registry[d] for d in fileinfo.file_dtype)
-        expected_dt_per_frame = nrows_expected*dt
-        read_first_frame = False
+        expected_dt_per_frame = fileinfo._frame_nrows*dt
+        t_start, recnum_start, df, _ = fileinfo.parse_whole_frame(f)
+        df_template = df.copy()
+        dfs = [df_template]*fileinfo._nframes
         try:
-            while True:
-                if read_first_frame:
-                    _, recnum_start = parse_frame_header(f, fileinfo.fmt)
-                    t_start += expected_dt_per_frame
-                else:
-                    t_start, recnum_start = parse_frame_header(f, fileinfo.fmt)
-                    read_first_frame = True
+            for framenum in range(len(dfs)):
+                # candidate_t_start is only used if we lose track of the clock
+                candidate_t_start, recnum_start, df, _ = fileinfo.parse_whole_frame(f)
+                t_start += expected_dt_per_frame
 
-                frame_data = parse_frame_data(f, fileinfo, frame_data_size)
-                _ = parse_frame_footer(f, fileinfo.fmt)
-                
-                # address possible clock drift
-                if frame_data.shape[0] != nrows_expected:
-                    msg = f"Number of frame rows ({frame_data.shape[0]}) different than expected ({nrows_expected}). Defaulting to datalogger clock at {t_start}."
+                last_frame_t_start = dfs[framenum - 1].iloc[0]["TIMESTAMP"]
+                if np.abs(candidate_t_start - last_frame_t_start) > expected_dt_per_frame*framenum*1.1:  # max acceptable drift of 10% per frame
+                    msg = f"Unacceptable clock drift! Setting clock {last_frame_t_start} -> {candidate_t_start}"
                     warnings.warn(msg)
-                    t_start = t_start.round(freq=dt)
+                    t_start = candidate_t_start
                 
                 # format data into a dataframe
-                frame_data["TIMESTAMP"] = date_range(t_start, freq=dt, periods=frame_data.shape[0])
+                df["TIMESTAMP"] = date_range(t_start, freq=dt, periods=df.shape[0])
                 if recnum_start is not None:
-                    frame_data["RECORD"] = np.arange(recnum_start, recnum_start + frame_data.shape[0])
-                frame_data = frame_data.sort_values("TIMESTAMP")
-                dfs.append(frame_data)  # could speed this up a lot
-
-                # yield data if the user requested the file to be chunked up
-                if chunksize is not None:
-                    if sum(df.shape[0] for df in dfs) >= records_per_chunk:
-                        df = concat(dfs).sort_values("TIMESTAMP").reset_index(drop=True)            
-                        yield fileinfo, df.iloc[:records_per_chunk]
-                        dfs = [df.iloc[records_per_chunk:]]
+                    df["RECORD"] = np.arange(recnum_start, recnum_start + df.shape[0])
+                df = df.sort_values("TIMESTAMP")
+                dfs[framenum] = df  # could speed this up a lot
 
         except (EOFError, IndexError):
-            yield fileinfo, concat(dfs).sort_values("TIMESTAMP").reset_index(drop=True)
+            return fileinfo, concat(dfs).sort_values("TIMESTAMP").reset_index(drop=True)
 
 if __name__ == "__main__":
     chunksize = Timedelta("30min")
