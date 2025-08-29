@@ -1,3 +1,18 @@
+# -----------------------------------------------------------------------------
+#  camp2ascii.py
+#
+#  A program to read TOB-format binary files into plaintext. Main script 
+#  for CLI usage.
+#
+#  Author: Alexander S Fox
+#  Contact: https://www.afox.land   (replace with your preferred contact)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+# -----------------------------------------------------------------------------
+
 if __name__ == "__main__":
     import argparse
     from pathlib import Path
