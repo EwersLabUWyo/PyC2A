@@ -115,14 +115,15 @@ def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
         except (EOFError, IndexError):
             msg = f"EOFError! File {fn} may be corrupted. Outputting results anyway..."
             warnings.warn(msg)
-            return csfile, compile_to_dataframe(frames)
-        return csfile, compile_to_dataframe(frames)
+            return csfile, compile_to_dataframe(csfile, frames)
+        return csfile, compile_to_dataframe(csfile, frames)
     
-def compile_to_dataframe(all_data: list[dict[str, np.ndarray]]) -> DataFrame:
+def compile_to_dataframe(csfile:CampbellFile, all_data: list[dict[str, np.ndarray]]) -> DataFrame:
     columns = list(all_data[0].keys())
     columns.remove("TIMESTAMP")
     if "RECORD" in columns:
         columns.remove("RECORD")
+
     arrays = [
         np.concatenate([frame[col] for frame in all_data], axis=0)
         for col in columns
