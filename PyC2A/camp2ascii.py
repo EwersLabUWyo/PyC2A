@@ -23,22 +23,32 @@ from tqdm import tqdm
 from .file_handler import *
 from .cs_types import *
 
-def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
-    """Converts a campbell scientific TOB file to a dataframe. Returns a tuple of the CampbellFile dataclass (containing raw file metadata) and a pandas DataFrame of the raw data."""
-
+def camp2ascii(fn:Path, chunksize:int=None, progress:bool=True) -> tuple[CampbellFile, DataFrame]:
+    """
+    Converts a Campbell Scientific TOB file to a DataFrame.
+    If chunksize is given, yields (csfile, DataFrame) for each chunk of lines.
+    Otherwise, returns (csfile, DataFrame) for the whole file. Pass progress=True for a progress bar display.
+    """
+    if chunksize is None:
+        return next(_camp2ascii_gen(fn, chunksize=None, progress=progress))
+    else:
+        return _camp2ascii_gen(fn, chunksize=chunksize, progress=progress)
+    
+def _camp2ascii_gen(fn: Path, chunksize=None, progress=True):
+    #### parse ascii header ####
     csfile = CampbellFile()
-
     with open(fn, "rb") as f:
-        # parse header
-        # example TOB3 Header
-        """
-        "TOB3","2991","CR6","2991","CR6.Std.04","CPU:TEST.EC.v18.CR6","52714","2018-06-08 00:00:00"
-        "ts_data","100 MSEC","984","950400","26624","Sec100Usec","           0","           0","0730014788"
-        "Ux","Uy","Uz","Ts","diag_sonic","H2O","CO2","amb_press","diag_irga","CO2_u_mol","H2O_m_mol"
-        "","","","degC","","mg/m^3","g/m^3","kPa","unitless","umol/mol","mmol/mol"
-        "Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp","Smp"
-        "IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B","IEEE4B" 
-        """
+        line1 = next(f)
+        # special case of TOA5: just an ascii file. No need to do anything else.
+        if "TOA5" in str(line1):
+            df = read_csv(fn, skiprows=[0, 2, 3], na_values=["-9999", "NAN"], parse_dates=["TIMESTAMP"])
+            if chunksize is None:
+                return csfile, df
+            else:
+                for i in range(0, len(df), chunksize):
+                    yield csfile, df.iloc[i:i+chunksize]
+            return
+
         (
             csfile.fmt,
             csfile.station,
@@ -49,7 +59,7 @@ def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
             csfile.signature,
             csfile.created,
             *_
-        ) = parse_ascii_header_line(next(f))
+        ) = parse_ascii_header_line(line1)
         (
             csfile.table,
             csfile.interval,
@@ -69,12 +79,7 @@ def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
         handle_string_type(csfile)
 
         csfile.manual_post_init()
-            
-        #### parse the data ####
-        if csfile.fmt == "TOA5":
-            return csfile, read_csv(fn, skiprows=[0, 2, 3], na_values=["-9999", "NAN"], parse_dates=["TIMESTAMP"])
 
-        ### TODO: improve time interval parsing.
         camp2timedelta = {
             "MSEC": "ms",
             "MIN": "min"
@@ -83,38 +88,53 @@ def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
         dt_unit = camp2timedelta[dt_unit]
         dt = Timedelta(dt + dt_unit)
 
-        expected_dt_per_frame = csfile._frame_nrows*dt
+        #### prep for main loop ####
+        expected_dt_per_frame = csfile._frame_nrows * dt
         t_start, recnum_start, df_dict, _ = csfile.parse_whole_frame(f)
-        df_dict_template = df_dict.copy()
+
+        frames = []
+        lines_in_chunk = 0
+        total_lines = 0
         try:
-            if nlines is not None:
-                pbar = trange(nlines // csfile._frame_nrows)
-                frames = [df_dict_template]* (nlines // csfile._frame_nrows)
-            else:
-                pbar = trange(csfile._nframes)
-                frames = [df_dict_template]* csfile._nframes
+            max_frames = csfile._nframes
+            pbar = range(max_frames)
+            if progress:
+                pbar = trange(max_frames)
             for framenum in pbar:
-                # candidate_t_start is only used if we lose track of the clock
                 candidate_t_start, recnum_start, df_dict, _ = csfile.parse_whole_frame(f)
                 t_start += expected_dt_per_frame
 
                 try:
-                    last_frame_t_start = frames[framenum - 1]["TIMESTAMP"][0]
-                    if np.abs(candidate_t_start - last_frame_t_start) > expected_dt_per_frame*framenum*1.1:  # max acceptable drift of 10% per frame
+                    last_frame_t_start = frames[-1]["TIMESTAMP"][0]
+                    if np.abs(candidate_t_start - last_frame_t_start) > expected_dt_per_frame * framenum * 1.1:
                         msg = f"Unacceptable clock drift! Setting clock {last_frame_t_start} -> {candidate_t_start}"
                         warnings.warn(msg)
                         t_start = candidate_t_start
-                except KeyError:
+                except (KeyError, IndexError):
                     pass
-                
-                # format data into a dataframe
+
                 df_dict["TIMESTAMP"] = date_range(t_start, freq=dt, periods=csfile._frame_nrows)
                 if recnum_start is not None:
                     df_dict["RECORD"] = np.arange(recnum_start, recnum_start + csfile._frame_nrows)
-                frames[framenum] = df_dict  # could speed this up a lot
+                frames.append(df_dict)
+                lines_in_chunk += csfile._frame_nrows
+                total_lines += csfile._frame_nrows
+
+                if chunksize is not None and lines_in_chunk >= chunksize:
+                    yield csfile, compile_to_dataframe(csfile, frames)
+                    frames = []
+                    lines_in_chunk = 0
+                    if progress: pbar.update(lines_in_chunk)
+                elif chunksize is None and progress:
+                    pbar.update(1)
+
+            # Yield any remaining frames at the end
+            if frames:
+                if progress: pbar.update(lines_in_chunk)
+                yield csfile, compile_to_dataframe(csfile, frames)
         except (EOFError, IndexError):
             msg = f"EOFError! File {fn} may be corrupted. Outputting results anyway..."
             warnings.warn(msg)
-            return csfile, compile_to_dataframe(csfile, frames)
-        return csfile, compile_to_dataframe(csfile, frames)
-    
+            if frames:
+                yield csfile, compile_to_dataframe(csfile, frames)
+    return
