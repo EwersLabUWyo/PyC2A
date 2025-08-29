@@ -126,11 +126,7 @@ class CampbellFile:
         return self.handler.parse_header(b)
     
     def parse_frame_data(self, f):
-        size = self._frame_data_size
-        b = f.read(size)
-        if b == b"":
-            raise EOFError
-        return self._data_parser(b)
+        return self._data_parser(f)
     
     def parse_frame_footer(self, f) -> Any:
         size = self.handler.footer_size

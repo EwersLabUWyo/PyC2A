@@ -32,8 +32,8 @@ class NSEC:
         NS = int.from_bytes(b[4:8], "little", signed=False)
         
         # total = np.int64(S)*np.int64(1_000_000_000) + np.int64(NS)//1e6*1e6
-        total = np.int64(S)*np.int64(1_000_000_000) + np.int64(NS if NS < 1_000_000_000 else 0)//1e6*1e6
-        return Timestamp("1990-01-01") + Timedelta(total, unit="ns")
+        total = np.int64(S)*np.int64(1_000_000_000) + np.int64(NS if NS < 1_000_000_000 else 0)
+        return Timestamp("1990-01-01") + Timedelta(total, unit="ns").round("200us")
 class FP2:
     name = "FP2"
     itemsize = 2
@@ -136,14 +136,14 @@ def data_parser_factory(csfile) -> Callable:
 def vector_parser(f: BufferedReader, csfile) -> DataFrame:
     # e.g. [("IEEE4B", np.dtype(">f4")), ("Bool8", np.dtype(">ui1")), ("ULONG", np.dtype(">ui4"))]
     dtype = np.dtype([(f"{k}_{i}", np_readable_type_registry[k].type) for i, k in enumerate(csfile.file_dtypes)])
-    try:
+    # try:
         
-        data_bytes = f.read(csfile._frame_data_size)
-        if data_bytes == b'': 
-            raise EOFError
-        data = np.asarray(np.frombuffer(data_bytes, dtype=dtype).tolist()).reshape(csfile._frame_nrows, -1)
-        #### TODO: fix hacky solution that i implemented to handle making this method compatible with nonvector_parser
-        column_data = {name: data[:, i] for i, name in enumerate(csfile.file_fieldnames)}
-        return column_data
-    except Exception:  # TODO: figure out what error numpy throws
-        pass
+    data_bytes = f.read(csfile._frame_data_size)
+    if data_bytes == b'': 
+        raise EOFError
+    data = np.asarray(np.frombuffer(data_bytes, dtype=dtype).tolist()).reshape(csfile._frame_nrows, -1)
+    #### TODO: fix hacky solution that i implemented to handle making this method compatible with nonvector_parser
+    column_data = {name: data[:, i] for i, name in enumerate(csfile.file_fieldnames)}
+    return column_data
+    # except KeyboardInterrupt:  # TODO: figure out what error numpy throws
+        # pass
