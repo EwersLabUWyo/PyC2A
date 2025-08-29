@@ -105,7 +105,6 @@ class CampbellFile:
         # instantiate information not found in the raw file metadata
         self._handler = format_registry[self.fmt]
         self._registered_dtypes = tuple(dtype_registry[name] for name in self.file_dtypes)
-        strides = []
         self._strides = tuple(rdt.itemsize for rdt in self._registered_dtypes)
 
         self._frame_data_size = self.frame_size - self.handler.header_size - self.handler.footer_size
@@ -127,7 +126,11 @@ class CampbellFile:
         return self.handler.parse_header(b)
     
     def parse_frame_data(self, f):
-        return self._data_parser(f)
+        size = self._frame_data_size
+        b = f.read(size)
+        if b == b"":
+            raise EOFError
+        return self._data_parser(b)
     
     def parse_frame_footer(self, f) -> Any:
         size = self.handler.footer_size
@@ -138,9 +141,9 @@ class CampbellFile:
     
     def parse_whole_frame(self, f) -> tuple[Timestamp, int, DataFrame, Any]:
         t_start, recnum = self.parse_frame_header(f)
-        df = self.parse_frame_data(f)
+        frame = self.parse_frame_data(f)
         footer = self.parse_frame_footer(f)
-        return t_start, recnum, df, footer
+        return t_start, recnum, frame, footer
     
 def compile_to_dataframe(csfile:CampbellFile, all_data: list[dict[str, np.ndarray]]) -> DataFrame:
     columns = list(all_data[0].keys())

@@ -89,34 +89,41 @@ def _camp2ascii_gen(fn: Path, chunksize=None, progress=True):
         dt = Timedelta(dt + dt_unit)
 
         #### prep for main loop ####
-        expected_dt_per_frame = csfile._frame_nrows * dt
-        t_start, recnum_start, df_dict, _ = csfile.parse_whole_frame(f)
-
         frames = []
         lines_in_chunk = 0
         total_lines = 0
+
+        expected_dt_per_frame = csfile._frame_nrows * dt
+        t_start, recnum_start, frame, _ = csfile.parse_whole_frame(f)
+        frame["TIMESTAMP"] = date_range(t_start, freq=dt, periods=csfile._frame_nrows)
+        if recnum_start is not None:
+            frame["RECORD"] = np.arange(recnum_start, recnum_start + csfile._frame_nrows)
+        frames.append(frame)
+        lines_in_chunk += csfile._frame_nrows
+        total_lines += csfile._frame_nrows
+
         try:
             max_frames = csfile._nframes
             pbar = range(max_frames)
             if progress:
                 pbar = trange(max_frames)
             for framenum in pbar:
-                candidate_t_start, recnum_start, df_dict, _ = csfile.parse_whole_frame(f)
+                candidate_t_start, recnum_start, frame, _ = csfile.parse_whole_frame(f)
                 t_start += expected_dt_per_frame
 
-                try:
-                    last_frame_t_start = frames[-1]["TIMESTAMP"][0]
-                    if np.abs(candidate_t_start - last_frame_t_start) > expected_dt_per_frame * framenum * 1.1:
-                        msg = f"Unacceptable clock drift! Setting clock {last_frame_t_start} -> {candidate_t_start}"
-                        warnings.warn(msg)
-                        t_start = candidate_t_start
-                except (KeyError, IndexError):
-                    pass
+                # try:
+                #     last_frame_t_start = frames[-1]["TIMESTAMP"][0]
+                #     if np.abs(candidate_t_start - last_frame_t_start) > expected_dt_per_frame * framenum * 1.1:
+                #         msg = f"Unacceptable clock drift! Setting clock {last_frame_t_start} -> {candidate_t_start}"
+                #         warnings.warn(msg)
+                #         t_start = candidate_t_start
+                # except (KeyError, IndexError):
+                #     pass
 
-                df_dict["TIMESTAMP"] = date_range(t_start, freq=dt, periods=csfile._frame_nrows)
+                frame["TIMESTAMP"] = date_range(t_start, freq=dt, periods=csfile._frame_nrows)
                 if recnum_start is not None:
-                    df_dict["RECORD"] = np.arange(recnum_start, recnum_start + csfile._frame_nrows)
-                frames.append(df_dict)
+                    frame["RECORD"] = np.arange(recnum_start, recnum_start + csfile._frame_nrows)
+                frames.append(frame)
                 lines_in_chunk += csfile._frame_nrows
                 total_lines += csfile._frame_nrows
 
