@@ -141,6 +141,7 @@ def vector_parser(f: BufferedReader, csfile) -> DataFrame:
     data_bytes = f.read(csfile._frame_data_size)
     if data_bytes == b'': 
         raise EOFError
+    #### TODO: fix handling of multi-row frames???????
     data = np.asarray(np.frombuffer(data_bytes, dtype=dtype).tolist()).reshape(csfile._frame_nrows, -1)
     #### TODO: fix hacky solution that i implemented to handle making this method compatible with nonvector_parser
     column_data = {name: data[:, i] for i, name in enumerate(csfile.file_fieldnames)}
