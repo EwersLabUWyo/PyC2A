@@ -118,28 +118,3 @@ def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
             return csfile, compile_to_dataframe(csfile, frames)
         return csfile, compile_to_dataframe(csfile, frames)
     
-def compile_to_dataframe(csfile:CampbellFile, all_data: list[dict[str, np.ndarray]]) -> DataFrame:
-    columns = list(all_data[0].keys())
-    columns.remove("TIMESTAMP")
-    if "RECORD" in columns:
-        columns.remove("RECORD")
-
-    arrays = [
-        np.concatenate([frame[col] for frame in all_data], axis=0)
-        for col in columns
-        if not (
-            np.issubdtype(all_data[0][col].dtype, np.datetime64) or
-            np.issubdtype(all_data[0][col].dtype, np.str_) or
-            all_data[0][col].dtype == object  # covers generic Python strings
-        )
-    ]
-    timestamps = np.concatenate([frame["TIMESTAMP"] for frame in all_data], axis=0)
-    
-    if "RECORD" in all_data[0]:
-        records = np.concatenate([frame["RECORD"] for frame in all_data], axis=0)
-
-    df = DataFrame(data=np.stack(arrays, axis=1), columns=columns)
-    df["TIMESTAMP"] = timestamps
-    if "RECORD" in all_data[0]:
-        df["RECORD"] = records
-    return df
