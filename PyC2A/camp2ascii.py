@@ -84,38 +84,61 @@ def camp2ascii(fn:Path, nlines=None) -> tuple[CampbellFile, DataFrame]:
         dt = Timedelta(dt + dt_unit)
 
         expected_dt_per_frame = csfile._frame_nrows*dt
-        t_start, recnum_start, df, _ = csfile.parse_whole_frame(f)
-        df_template = df.copy()
-        dfs = [df_template]*csfile._nframes
+        t_start, recnum_start, df_dict, _ = csfile.parse_whole_frame(f)
+        df_dict_template = df_dict.copy()
         try:
             if nlines is not None:
                 pbar = trange(nlines // csfile._frame_nrows)
+                frames = [df_dict_template]* (nlines // csfile._frame_nrows)
             else:
-                pbar = trange(len(dfs))
+                pbar = trange(csfile._nframes)
+                frames = [df_dict_template]* csfile._nframes
             for framenum in pbar:
                 # candidate_t_start is only used if we lose track of the clock
-                candidate_t_start, recnum_start, df, _ = csfile.parse_whole_frame(f)
+                candidate_t_start, recnum_start, df_dict, _ = csfile.parse_whole_frame(f)
                 t_start += expected_dt_per_frame
 
                 try:
-                    last_frame_t_start = dfs[framenum - 1].iloc[0]["TIMESTAMP"]
+                    last_frame_t_start = frames[framenum - 1]["TIMESTAMP"][0]
                     if np.abs(candidate_t_start - last_frame_t_start) > expected_dt_per_frame*framenum*1.1:  # max acceptable drift of 10% per frame
                         msg = f"Unacceptable clock drift! Setting clock {last_frame_t_start} -> {candidate_t_start}"
                         warnings.warn(msg)
                         t_start = candidate_t_start
                 except KeyError:
                     pass
-                    
                 
                 # format data into a dataframe
-                df["TIMESTAMP"] = date_range(t_start, freq=dt, periods=df.shape[0])
+                df_dict["TIMESTAMP"] = date_range(t_start, freq=dt, periods=csfile._frame_nrows)
                 if recnum_start is not None:
-                    df["RECORD"] = np.arange(recnum_start, recnum_start + df.shape[0])
-                df = df.sort_values("TIMESTAMP")
-                dfs[framenum] = df  # could speed this up a lot
-
+                    df_dict["RECORD"] = np.arange(recnum_start, recnum_start + csfile._frame_nrows)
+                frames[framenum] = df_dict  # could speed this up a lot
         except (EOFError, IndexError):
             msg = f"EOFError! File {fn} may be corrupted. Outputting results anyway..."
             warnings.warn(msg)
-            return csfile, concat(dfs[:framenum]).sort_values("TIMESTAMP").reset_index(drop=True)
-        return csfile, concat(dfs[:framenum]).sort_values("TIMESTAMP").reset_index(drop=True)
+            return csfile, compile_to_dataframe(frames)
+        return csfile, compile_to_dataframe(frames)
+    
+def compile_to_dataframe(all_data: list[dict[str, np.ndarray]]) -> DataFrame:
+    columns = list(all_data[0].keys())
+    columns.remove("TIMESTAMP")
+    if "RECORD" in columns:
+        columns.remove("RECORD")
+    arrays = [
+        np.concatenate([frame[col] for frame in all_data], axis=0)
+        for col in columns
+        if not (
+            np.issubdtype(all_data[0][col].dtype, np.datetime64) or
+            np.issubdtype(all_data[0][col].dtype, np.str_) or
+            all_data[0][col].dtype == object  # covers generic Python strings
+        )
+    ]
+    timestamps = np.concatenate([frame["TIMESTAMP"] for frame in all_data], axis=0)
+    
+    if "RECORD" in all_data[0]:
+        records = np.concatenate([frame["RECORD"] for frame in all_data], axis=0)
+
+    df = DataFrame(data=np.stack(arrays, axis=1), columns=columns)
+    df["TIMESTAMP"] = timestamps
+    if "RECORD" in all_data[0]:
+        df["RECORD"] = records
+    return df

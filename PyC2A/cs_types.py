@@ -119,11 +119,11 @@ def data_parser_factory(csfile) -> Callable:
         return_dtypes.append(return_dtype)
 
     def nonvector_parser(f: BufferedReader) -> np.ndarray:
-        df = DataFrame({name:np.empty(csfile._frame_nrows, dtype=d) for name, d in zip(csfile.file_fieldnames, return_dtypes)})
-        for r in df.index:
+        column_data = {name:np.empty(csfile._frame_nrows, dtype=d) for name, d in zip(csfile.file_fieldnames, return_dtypes)}
+        for r in range(csfile._frame_nrows):
             for name, s, parser in zip(csfile.file_fieldnames, csfile._strides, parser_lst):
-                df.loc[r, name] = parser(f.read(s))
-        return df
+                column_data[name][r] = parser(f.read(s))
+        return column_data
     return nonvector_parser
 
 def vector_parser(csfile, f: BufferedReader) -> DataFrame:
@@ -134,6 +134,8 @@ def vector_parser(csfile, f: BufferedReader) -> DataFrame:
         if data_bytes == b'': 
             raise EOFError
         data = np.frombuffer(data_bytes, dtype=dtype).reshape(-1).tolist()
-        return DataFrame(data=data, columns=csfile.file_fieldnames)
+        #### TODO: fix hacky solution that i implemented to handle making this method compatible with nonvector_parser
+        column_data = {name: data[:, i] for i, name in enumerate(csfile.file_fieldnames)}
+        return column_data
     except Exception:  # TODO: figure out what error numpy throws
         pass
