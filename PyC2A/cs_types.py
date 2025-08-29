@@ -35,7 +35,7 @@ class NSEC:
 class FP2:
     name = "FP2"
     itemsize = 2
-    return_type = np.dtype(">f2")
+    return_type = np.dtype(">f4")
     @staticmethod
     def from_bytes(b: bytes) -> np.float16:
         # Bit 16: Sign, 0 = positive, 1 = negative
@@ -51,13 +51,13 @@ class FP2:
 
         match S, E, M:
             case 0, 0, 8191:
-                return np.float16(np.inf)
+                return np.float32(np.inf)
             case 1, 0, 8191:
-                return np.float16(-np.inf)
+                return np.float32(-np.inf)
             case 1, 0, 8190:
-                return np.float16(np.nan)
+                return np.float32(np.nan)
             case _:
-                return np.float16((1 - 2*S)*M*10**(-E))
+                return np.float32((1 - 2*S)*M*10**(-E))
 
 def handle_string_type(cf):
     ascii_dtypes = {}
